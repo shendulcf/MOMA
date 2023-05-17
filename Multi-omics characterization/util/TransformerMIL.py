@@ -40,7 +40,8 @@ class Attention(nn.Module):
         self.heads = heads
         self.scale = dim_head ** -0.5
 
-        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False)
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False) 
+        # 一个线性层，将输入的dim维度映射到inner_dim * 3维度，即将输入映射为查询（query）、键（key）和值（value）。
         self.to_out = nn.Sequential(
             nn.Linear(inner_dim, dim),
             nn.Dropout(dropout)
@@ -49,9 +50,9 @@ class Attention(nn.Module):
     def forward(self, x, mask = None):
         b, n, _, h = *x.shape, self.heads
         qkv = self.to_qkv(x).chunk(3, dim = -1)
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), qkv)
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), qkv) 
 
-        dots = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
+        dots = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale # Q*K/d^-0.5
         mask_value = -torch.finfo(dots.dtype).max
 
         if mask is not None:
@@ -83,7 +84,17 @@ class Transformer(nn.Module):
             x = ff(x)
         return x
 
-    
+'''
+这是多示例学习模型的主类。在初始化函数中，定义了模型的结构，包括注意力机制、分类器等组件。
+
+inst_eval函数用于对每个示例进行评估，根据输入的注意力权重计算实例损失，并返回预测结果和目标标签。
+
+inst_eval_out函数用于对不在类别中的示例进行评估，计算实例损失，并返回预测结果和目标标签。
+
+forward函数定义了模型的前向传播过程，包括注意力计算、实例级别评估和总体损失计算。
+
+最后的SmoothTop1SVM是另一个模块，可能是用于执行SmoothTop1SVM算法的。在提供的代码中没有给出相关的具体实现，所以无法给出更多详细信息。
+'''
 
 
 class MIL(nn.Module):
@@ -98,7 +109,7 @@ class MIL(nn.Module):
         self.subtyping = True
         
         self.instance_loss_fn = SmoothTop1SVM(num_class, tau = tau).cuda()
-        
+        # 这是用于计算注意力权重的两个线性层，输入是隐藏层表示H，输出经过激活函数处理后得到注意力的两个部分
         self.attention_V2 = nn.Sequential(
             nn.Linear(self.L, self.D),
             nn.Tanh()
@@ -109,17 +120,17 @@ class MIL(nn.Module):
             nn.Sigmoid()
         )
 
-        self.attention_weights2 = nn.Linear(self.D, self.K)
+        self.attention_weights2 = nn.Linear(self.D, self.K) # 该线性层用于将注意力的两个部分相乘并降维为一个值，用于后续的Softmax操作
 
         self.classifier = nn.Sequential(
             nn.Linear(hidden_dim, 2)
         )
 
         instance_classifiers = [nn.Linear(hidden_dim, 2) for i in range(num_class)]
-        self.instance_classifiers = nn.ModuleList(instance_classifiers)
+        self.instance_classifiers = nn.ModuleList(instance_classifiers) # 一个多个线性层的列表，用于对多个类的示例进行分类
         
-        self.cls_token = nn.Parameter(torch.zeros((1, 1, hidden_dim)))
-        self.projector = nn.Linear(2048, hidden_dim)
+        self.cls_token = nn.Parameter(torch.zeros((1, 1, hidden_dim))) # 一个可学习的参数，用于表示每个输入序列的类别
+        self.projector = nn.Linear(2048, hidden_dim) # 一个线性层，用于将输入序列的维度从2048投影到隐藏层维度
         self.transformer = Transformer(hidden_dim, encoder_layer, 8, 64, 2048, 0.1)
         self.dropout = nn.Dropout(0.1)
         
@@ -139,7 +150,7 @@ class MIL(nn.Module):
         top_p_ids = torch.topk(A, self.k_sample)[1][-1]
         #top_p = torch.index_select(instance_feature, dim=0, index=top_p_ids)
         top_p = [instance_feature[i] for i in top_p_ids]
-        top_p = torch.cat(top_p, dim = 1).squeeze(0)
+        top_p = torch.cat(top_p, dim = 1).squeeze(0) 
         top_n_ids = torch.topk(-A, self.k_sample, dim=1)[1][-1]
         #top_n = torch.index_select(instance_feature, dim=0, index=top_n_ids)
         top_n = [instance_feature[i] for i in top_n_ids]
@@ -176,8 +187,8 @@ class MIL(nn.Module):
             x = self.projector(x)
             x = torch.cat((self.cls_token, x), dim = 1)
             x = self.dropout(x)
-            rep = self.transformer(x)
-            H.append(rep[:, 0])
+            rep = self.transformer(x) # b,n,(h,d) --> b,n,dim --> b,n, mlp_dim
+            H.append(rep[:, 0]) # class_token
             instance_feature.append(rep[:, 1:])
             
         H = torch.cat(H)
@@ -193,7 +204,7 @@ class MIL(nn.Module):
         all_targets = []
         inst_labels = F.one_hot(label, num_classes=self.n_classes).squeeze() #binarize label
         for i in range(len(self.instance_classifiers)):
-            inst_label = inst_labels[i].item()
+            inst_label = inst_labels[i].item() # 用于将张量或张量中的元素转换为Python标量
             classifier = self.instance_classifiers[i]
             if inst_label == 1: #in-the-class:
                 instance_loss, preds, targets = self.inst_eval(A, H, instance_feature, classifier)

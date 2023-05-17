@@ -1,4 +1,4 @@
-README.md
+LICENSE
 setup.py
 topk/__init__.py
 topk/functional.py

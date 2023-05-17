@@ -2,7 +2,7 @@
 # multiprocessing
 
 import os
-os.add_dll_directory('path to openslide-win64-20171122/bin') #input openslide file
+# os.add_dll_directory('path to openslide-win64-20171122/bin') #input openslide file
 
 import sys
 import multiprocessing as mp

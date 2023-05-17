@@ -1,10 +1,12 @@
-Metadata-Version: 1.0
+Metadata-Version: 2.1
 Name: topk
 Version: 1.0
 Summary: Implementation of Smooth Loss functions for Deep Top-k Classification
 Home-page: https://github.com/oval-group/smooth-topk
 Author: Leonard Berrada
-Author-email: UNKNOWN
 License: GNU General Public License
-Description: UNKNOWN
 Platform: UNKNOWN
+License-File: LICENSE
+
+UNKNOWN
+
