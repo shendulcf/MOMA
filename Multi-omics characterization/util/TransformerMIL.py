@@ -118,7 +118,7 @@ class DualPathTransformer(nn.Module):
                 Residual(PreNorm(input_feats_dim, Attention(input_feats_dim, heads = num_heads, dim_head = dim_head, dropout = dropout))),
                 Residual(PreNorm(input_feats_dim, FeedForward(input_feats_dim, mlp_dim, dropout = dropout)))
             ]))
-        self.fusion_linear = nn.Linear(input_feats_dim * 2, mlp_dim)
+        # self.fusion_linear = nn.Linear(input_feats_dim * 2, mlp_dim)
     def forward(self, x1, x2, mask=None):
         for attn, ff in self.layers_low:
             x1 = attn(x1, mask = mask)
@@ -126,8 +126,11 @@ class DualPathTransformer(nn.Module):
         for attn, ff in self.layers_high:
             x2 = attn(x2, mask = mask)
             x2 = ff(x2)
-        x = torch.cat((x1, x2), dim=-1)
-        x = self.fusion_linear(x)
+        print(x1.size())
+        print(x2.size())
+        x = torch.cat((x1, x2), dim=1)
+        
+        # x = self.fusion_linear(x)
         return x
 '''
 Residual类和PreNorm类是用于模型中的残差连接和层归一化的辅助类。
