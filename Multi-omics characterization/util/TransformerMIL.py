@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 import torch.nn.functional as F
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
@@ -69,6 +70,25 @@ class Attention(nn.Module):
         out =  self.to_out(out)
         return out
 
+'''
+在Transformer类的初始化函数中，定义了模型的结构。它接受以下参数：
+
+dim：表示Transformer模型的隐藏维度。
+depth：表示Transformer模型的层数，即堆叠的Transformer层的数量。
+heads：表示自注意力机制中的注意力头数。
+dim_head：表示每个注意力头的维度。
+mlp_dim：表示前馈神经网络的隐藏层维度。
+dropout：表示用于正则化的丢弃概率。
+在初始化函数中，使用一个循环来创建多个Transformer层，并将它们添加到模型的layers列表中。每个Transformer层由两个部分组成：
+
+Residual(PreNorm(dim, Attention(dim, heads=heads, dim_head=dim_head, dropout=dropout)))：表示一个具有残差连接的预标准化（PreNorm）的自注意力机制。它将输入通过层归一化（LayerNorm）处理后，传递给自注意力机制，然后将自注意力机制的输出与输入进行残差连接。
+
+Residual(PreNorm(dim, FeedForward(dim, mlp_dim, dropout=dropout)))：表示一个具有残差连接的预标准化的前馈神经网络。它将输入通过层归一化处理后，传递给前馈神经网络，然后将前馈神经网络的输出与输入进行残差连接。
+
+这样，通过堆叠多个Transformer层，构建了一个完整的Transformer模型。
+
+在forward函数中，通过迭代遍历模型的所有Transformer层，并依次对输入进行自注意力机制和前馈神经网络的计算。最后返回输出。
+'''
 class Transformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
         super().__init__()
@@ -84,7 +104,37 @@ class Transformer(nn.Module):
             x = ff(x)
         return x
 
+class DualPathTransformer(nn.Module):
+    def __init__(self, input_feats_dim, depth, num_heads, dim_head, mlp_dim, dropout = 0.):
+        super().__init__()
+        self.layers_low = nn.ModuleList([])
+        self.layers_high = nn.ModuleList([])
+        for _ in range(depth):
+            self.layers_low.append(nn.ModuleList([
+                Residual(PreNorm(input_feats_dim, Attention(input_feats_dim, heads = num_heads, dim_head = dim_head, dropout = dropout))),
+                Residual(PreNorm(input_feats_dim, FeedForward(input_feats_dim, mlp_dim, dropout = dropout)))
+            ]))
+            self.layers_high.append(nn.ModuleList([
+                Residual(PreNorm(input_feats_dim, Attention(input_feats_dim, heads = num_heads, dim_head = dim_head, dropout = dropout))),
+                Residual(PreNorm(input_feats_dim, FeedForward(input_feats_dim, mlp_dim, dropout = dropout)))
+            ]))
+        self.fusion_linear = nn.Linear(input_feats_dim * 2, mlp_dim)
+    def forward(self, x1, x2, mask=None):
+        for attn, ff in self.layers_low:
+            x1 = attn(x1, mask = mask)
+            x1 = ff(x1)
+        for attn, ff in self.layers_high:
+            x2 = attn(x2, mask = mask)
+            x2 = ff(x2)
+        x = torch.cat((x1, x2), dim=-1)
+        x = self.fusion_linear(x)
+        return x
 '''
+Residual类和PreNorm类是用于模型中的残差连接和层归一化的辅助类。
+FeedForward类定义了一个前馈神经网络层，用于对输入进行非线性变换。
+Attention类定义了注意力机制，包括将输入映射为查询（query）、键（key）和值（value），计算注意力权重，并将注意力应用于值以得到输出。
+Transformer类定义了一个多层的Transformer模型，由多个注意力层和前馈神经网络层组成。
+MIL类是多示例学习模型的主类。它包含了注意力计算、实例级别评估和总体损失计算的功能。
 这是多示例学习模型的主类。在初始化函数中，定义了模型的结构，包括注意力机制、分类器等组件。
 
 inst_eval函数用于对每个示例进行评估，根据输入的注意力权重计算实例损失，并返回预测结果和目标标签。
@@ -229,3 +279,12 @@ class MIL(nn.Module):
     
         
         return logit, total_inst_loss, A.detach()
+
+if __name__ == "__main__":
+    input1 = torch.randn(1, 10, 512)
+    input2 = torch.randn(1, 32, 512)
+    model = DualPathTransformer(512, 1, 8, 64, 2048, 0.1)
+    output = model(input1, input2)
+
+    print(model)
+    print(output.size())
